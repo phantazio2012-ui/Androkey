@@ -1,142 +1,142 @@
 package com.cgsi.clavier
 
+import android.Manifest
 import android.annotation.SuppressLint
+import android.app.Activity
 import android.bluetooth.BluetoothAdapter
-import android.bluetooth.BluetoothDevice
-import android.bluetooth.BluetoothHidDevice
-import android.bluetooth.BluetoothHidDeviceAppSdpSettings
-import android.bluetooth.BluetoothManager
-import android.bluetooth.BluetoothProfile
-import android.content.Context
-import org.json.JSONArray
+import android.content.Intent
+import android.content.pm.PackageManager
+import android.net.Uri
+import android.os.Build
+import android.os.Bundle
+import android.view.View
+import android.view.WindowManager
+import android.webkit.JavascriptInterface
+import android.webkit.WebView
 import org.json.JSONObject
-import java.util.concurrent.Executors
 
-/**
- * Fait apparaître le téléphone/la tablette comme un clavier Bluetooth (profil HID Device, Android 9+).
- * L'ordinateur interprète les codes de touches selon SA disposition (AZERTY/QWERTY/QWERTZ) :
- * choisissez dans l'appli la même disposition que celle réglée sur l'ordinateur.
- */
-@SuppressLint("MissingPermission")
-class HidKeyboard(
-    private val context: Context,
-    private val onState: (connected: Boolean, name: String) -> Unit,
-    private val onMsg: (String) -> Unit
-) {
-    private var isRegistered = false
-    private val adapter: BluetoothAdapter? =
-        (context.getSystemService(Context.BLUETOOTH_SERVICE) as BluetoothManager).adapter
-    private var hid: BluetoothHidDevice? = null
-    private var host: BluetoothDevice? = null
-    private val executor = Executors.newSingleThreadExecutor()
+class MainActivity : Activity() {
 
-    private val callback = object : BluetoothHidDevice.Callback() {
-        override fun onAppStatusChanged(pluggedDevice: BluetoothDevice?, registered: Boolean) {
-            isRegistered = registered
-            if (!registered) {
-                onMsg("Clavier non enregistré : ce téléphone refuse le mode clavier Bluetooth")
-            } else if (pluggedDevice != null) {
-                host = pluggedDevice
-                onState(true, runCatching { pluggedDevice.name }.getOrNull() ?: pluggedDevice.address)
-            } else {
-                onMsg("Clavier prêt : choisissez l'ordinateur puis Connecter")
-            }
-        }
+    private lateinit var web: WebView
+    private lateinit var hid: HidKeyboard
+    private lateinit var gyro: GyroMouse
 
-        override fun onConnectionStateChanged(device: BluetoothDevice, state: Int) {
-            when (state) {
-                BluetoothProfile.STATE_CONNECTING -> onMsg("Connexion en cours…")
-                BluetoothProfile.STATE_CONNECTED -> {
-                    host = device
-                    onState(true, runCatching { device.name }.getOrNull() ?: device.address)
+    @SuppressLint("SetJavaScriptEnabled")
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+
+        hid = HidKeyboard(
+            this,
+            onState = { connected, name ->
+                runOnUiThread {
+                    web.evaluateJavascript(
+                        "window.onBtState($connected, ${JSONObject.quote(name)})", null
+                    )
                 }
-                BluetoothProfile.STATE_DISCONNECTED -> {
-                    if (host?.address == device.address) host = null
-                    onState(false, "")
+            },
+            onMsg = { msg ->
+                runOnUiThread {
+                    web.evaluateJavascript("window.onBtMsg(${JSONObject.quote(msg)})", null)
                 }
             }
+        )
+        gyro = GyroMouse(this) { dx, dy -> hid.sendMouse(hid.lastButtons, dx, dy, 0) }
+
+        web = WebView(this).apply {
+            setBackgroundColor(0xFF0B3D91.toInt())
+            settings.javaScriptEnabled = true
+            settings.domStorageEnabled = true
+            addJavascriptInterface(Bridge(), "Android")
+            loadUrl("file:///android_asset/keyboard.html")
         }
+        setContentView(web)
+        hideSystemBars()
+
+        if (hasBtPermission()) hid.start() else requestBtPermission()
     }
 
-    /** À appeler une fois la permission Bluetooth accordée. */
-    fun start() {
-        val ok = adapter?.getProfileProxy(context, object : BluetoothProfile.ServiceListener {
-            override fun onServiceConnected(profile: Int, proxy: BluetoothProfile) {
-                if (profile != BluetoothProfile.HID_DEVICE) return
-                val h = proxy as BluetoothHidDevice
-                hid = h
-                val sdp = BluetoothHidDeviceAppSdpSettings(
-                    "Clavier CGSI", "Clavier plein écran", "CGSI",
-                    BluetoothHidDevice.SUBCLASS1_KEYBOARD, DESCRIPTOR
+    // ---- Pont JavaScript -> Android (objet "Android" côté page) ----
+    inner class Bridge {
+        @JavascriptInterface fun sendKey(code: Int, mods: Int) = hid.sendKey(code, mods)
+        @JavascriptInterface fun mouse(dx: Int, dy: Int, wheel: Int, buttons: Int) = hid.sendMouse(buttons, dx, dy, wheel)
+        @JavascriptInterface fun getDevices(): String = hid.pairedDevices()
+        @JavascriptInterface fun disconnect() = hid.disconnect()
+        @JavascriptInterface fun connect(address: String) {
+            if (!hasBtPermission()) runOnUiThread { requestBtPermission() } else hid.connect(address)
+        }
+        @JavascriptInterface fun discoverable() {
+            runOnUiThread {
+                startActivity(
+                    Intent(BluetoothAdapter.ACTION_REQUEST_DISCOVERABLE)
+                        .putExtra(BluetoothAdapter.EXTRA_DISCOVERABLE_DURATION, 120)
                 )
-                h.registerApp(sdp, null, null, executor, callback)
-            }
-
-            override fun onServiceDisconnected(profile: Int) {
-                if (profile == BluetoothProfile.HID_DEVICE) {
-                    hid = null
-                    host = null
-                }
-            }
-        }, BluetoothProfile.HID_DEVICE)
-        if (ok != true) onMsg("Ce téléphone ne prend pas en charge le mode clavier Bluetooth")
-    }
-
-    fun pairedDevices(): String {
-        val arr = JSONArray()
-        runCatching {
-            adapter?.bondedDevices?.forEach {
-                arr.put(JSONObject().put("name", it.name ?: it.address).put("address", it.address))
             }
         }
-        return arr.toString()
-    }
 
-    fun connect(address: String) {
-        val h = hid
-        if (h == null) { onMsg("Bluetooth indisponible : autorisez l'accès Bluetooth puis rouvrez l'appli"); return }
-        if (!isRegistered) { onMsg("Clavier non enregistré : fermez puis rouvrez l'appli"); return }
-        val dev = runCatching { adapter?.getRemoteDevice(address) }.getOrNull() ?: return
-        val ok = h.connect(dev)
-        onMsg(if (ok) "Connexion à ${runCatching { dev.name }.getOrNull() ?: address}…"
-              else "Échec : sur l'ordinateur, supprimez le téléphone des appareils Bluetooth, ré-appairez, puis réessayez")
-    }
-
-    fun disconnect() {
-        host?.let { hid?.disconnect(it) }
-    }
-
-    /** Envoie une pression puis un relâchement de touche. mods : bits HID (Maj = 0x02, AltGr = 0x40). */
-    fun sendKey(code: Int, mods: Int) {
-        val h = hid ?: return
-        val d = host ?: return
-        h.sendReport(d, REPORT_ID, byteArrayOf(mods.toByte(), 0, code.toByte(), 0, 0, 0, 0, 0))
-        h.sendReport(d, REPORT_ID, ByteArray(8))
-    }
-
-    fun stop() {
-        runCatching {
-            hid?.unregisterApp()
-            adapter?.closeProfileProxy(BluetoothProfile.HID_DEVICE, hid)
+        /** Active/désactive la souris par mouvement (gyroscope). Renvoie false si le capteur est absent. */
+        @JavascriptInterface fun gyro(on: Boolean, sens: Double, invX: Boolean, invY: Boolean): Boolean {
+            gyro.sensitivity = sens; gyro.invertX = invX; gyro.invertY = invY
+            if (!on) { gyro.stop(); return true }
+            gyro.stop()
+            return gyro.start()
         }
-        hid = null
-        host = null
+
+        @JavascriptInterface fun openUrl(url: String) {
+            if (!url.startsWith("https://")) return
+            runOnUiThread {
+                runCatching { startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url))) }
+            }
+        }
     }
 
-    companion object {
-        private const val REPORT_ID = 1
+    // ---- Permissions Bluetooth (Android 12+) ----
+    private fun hasBtPermission(): Boolean =
+        Build.VERSION.SDK_INT < Build.VERSION_CODES.S ||
+            checkSelfPermission(Manifest.permission.BLUETOOTH_CONNECT) == PackageManager.PERMISSION_GRANTED
 
-        // Descripteur HID d'un clavier standard (8 octets : modificateurs, réservé, 6 touches) + LED
-        private val DESCRIPTOR: ByteArray = intArrayOf(
-            0x05, 0x01, 0x09, 0x06, 0xA1, 0x01, 0x85, REPORT_ID,
-            0x05, 0x07, 0x19, 0xE0, 0x29, 0xE7, 0x15, 0x00, 0x25, 0x01,
-            0x75, 0x01, 0x95, 0x08, 0x81, 0x02,
-            0x95, 0x01, 0x75, 0x08, 0x81, 0x01,
-            0x95, 0x05, 0x75, 0x01, 0x05, 0x08, 0x19, 0x01, 0x29, 0x05, 0x91, 0x02,
-            0x95, 0x01, 0x75, 0x03, 0x91, 0x01,
-            0x95, 0x06, 0x75, 0x08, 0x15, 0x00, 0x25, 0x65,
-            0x05, 0x07, 0x19, 0x00, 0x29, 0x65, 0x81, 0x00,
-            0xC0
-        ).map { it.toByte() }.toByteArray()
+    private fun requestBtPermission() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            requestPermissions(
+                arrayOf(Manifest.permission.BLUETOOTH_CONNECT, Manifest.permission.BLUETOOTH_ADVERTISE), 1
+            )
+        }
+    }
+
+    override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        if (hasBtPermission()) {
+            hid.start()
+            web.evaluateJavascript("refreshDevices()", null)
+        }
+    }
+
+    // ---- Plein écran immersif ----
+    @Suppress("DEPRECATION")
+    private fun hideSystemBars() {
+        window.decorView.systemUiVisibility = (View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY
+            or View.SYSTEM_UI_FLAG_HIDE_NAVIGATION
+            or View.SYSTEM_UI_FLAG_FULLSCREEN
+            or View.SYSTEM_UI_FLAG_LAYOUT_STABLE
+            or View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION
+            or View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN)
+    }
+
+    override fun onWindowFocusChanged(hasFocus: Boolean) {
+        super.onWindowFocusChanged(hasFocus)
+        if (hasFocus) hideSystemBars()
+    }
+
+    override fun onPause() {
+        // Le gyroscope est coupé quand l'appli passe en arrière-plan
+        gyro.stop()
+        web.evaluateJavascript("window.onGyroOff && window.onGyroOff()", null)
+        super.onPause()
+    }
+
+    override fun onDestroy() {
+        gyro.stop()
+        hid.stop()
+        super.onDestroy()
     }
 }
