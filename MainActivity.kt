@@ -6,6 +6,7 @@ import android.app.Activity
 import android.bluetooth.BluetoothAdapter
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.view.View
@@ -18,6 +19,7 @@ class MainActivity : Activity() {
 
     private lateinit var web: WebView
     private lateinit var hid: HidKeyboard
+    private lateinit var gyro: GyroMouse
 
     @SuppressLint("SetJavaScriptEnabled")
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -39,6 +41,7 @@ class MainActivity : Activity() {
                 }
             }
         )
+        gyro = GyroMouse(this) { dx, dy -> hid.sendMouse(hid.lastButtons, dx, dy, 0) }
 
         web = WebView(this).apply {
             setBackgroundColor(0xFF0B3D91.toInt())
@@ -56,17 +59,33 @@ class MainActivity : Activity() {
     // ---- Pont JavaScript -> Android (objet "Android" côté page) ----
     inner class Bridge {
         @JavascriptInterface fun sendKey(code: Int, mods: Int) = hid.sendKey(code, mods)
+        @JavascriptInterface fun mouse(dx: Int, dy: Int, wheel: Int, buttons: Int) = hid.sendMouse(buttons, dx, dy, wheel)
         @JavascriptInterface fun getDevices(): String = hid.pairedDevices()
+        @JavascriptInterface fun disconnect() = hid.disconnect()
         @JavascriptInterface fun connect(address: String) {
             if (!hasBtPermission()) runOnUiThread { requestBtPermission() } else hid.connect(address)
         }
-        @JavascriptInterface fun disconnect() = hid.disconnect()
         @JavascriptInterface fun discoverable() {
             runOnUiThread {
                 startActivity(
                     Intent(BluetoothAdapter.ACTION_REQUEST_DISCOVERABLE)
                         .putExtra(BluetoothAdapter.EXTRA_DISCOVERABLE_DURATION, 120)
                 )
+            }
+        }
+
+        /** Active/désactive la souris par mouvement (gyroscope). Renvoie false si le capteur est absent. */
+        @JavascriptInterface fun gyro(on: Boolean, sens: Double, invX: Boolean, invY: Boolean): Boolean {
+            gyro.sensitivity = sens; gyro.invertX = invX; gyro.invertY = invY
+            if (!on) { gyro.stop(); return true }
+            gyro.stop()
+            return gyro.start()
+        }
+
+        @JavascriptInterface fun openUrl(url: String) {
+            if (!url.startsWith("https://")) return
+            runOnUiThread {
+                runCatching { startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url))) }
             }
         }
     }
@@ -108,7 +127,15 @@ class MainActivity : Activity() {
         if (hasFocus) hideSystemBars()
     }
 
+    override fun onPause() {
+        // Le gyroscope est coupé quand l'appli passe en arrière-plan
+        gyro.stop()
+        web.evaluateJavascript("window.onGyroOff && window.onGyroOff()", null)
+        super.onPause()
+    }
+
     override fun onDestroy() {
+        gyro.stop()
         hid.stop()
         super.onDestroy()
     }
