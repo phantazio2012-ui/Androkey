@@ -19,7 +19,7 @@ jobs:
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - uses: actions/checkout@v4
-      - run: mkdir site && cp app/src/main/assets/keyboard.html site/index.html
+      - run: mkdir site && cp -r app/src/main/assets/. site/ && mv site/keyboard.html site/index.html
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:
