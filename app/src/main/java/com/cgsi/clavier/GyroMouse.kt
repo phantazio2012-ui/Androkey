@@ -1,6 +1,7 @@
 package com.cgsi.clavier
 
 import android.app.Activity
+import android.content.Context
 import android.hardware.Sensor
 import android.hardware.SensorEvent
 import android.hardware.SensorEventListener
@@ -16,7 +17,7 @@ class GyroMouse(
     private val send: (dx: Int, dy: Int) -> Unit
 ) : SensorEventListener {
 
-    private val sm = activity.getSystemService(Activity.SENSOR_SERVICE) as SensorManager
+    private val sm = activity.getSystemService(Context.SENSOR_SERVICE) as SensorManager
     private val gyro: Sensor? = sm.getDefaultSensor(Sensor.TYPE_GYROSCOPE)
 
     @Volatile var sensitivity = 1.6

@@ -46,6 +46,16 @@ class HidKeyboard(
             }
         }
 
+        override fun onGetReport(device: BluetoothDevice, type: Byte, id: Byte, bufferSize: Int) {
+            val size = if (id.toInt() == MOUSE_ID) 4 else 8
+            hid?.replyReport(device, type, id, ByteArray(size))
+        }
+
+        override fun onSetReport(device: BluetoothDevice, type: Byte, id: Byte, data: ByteArray) {
+            // Voyants du clavier (Verr Maj...) envoyés par l'ordinateur : on accuse réception
+            hid?.reportError(device, BluetoothHidDevice.ERROR_RSP_SUCCESS)
+        }
+
         override fun onConnectionStateChanged(device: BluetoothDevice, state: Int) {
             when (state) {
                 BluetoothProfile.STATE_CONNECTING -> onMsg("Connexion en cours…")
@@ -118,19 +128,21 @@ class HidKeyboard(
     }
 
     /** Rapport de souris : déplacement relatif, molette et boutons. */
-    fun sendMouse(buttons: Int, dx: Int, dy: Int, wheel: Int) {
+    fun sendMouse(buttons: Int, dx: Int, dy: Int, wheel: Int): Int {
         lastButtons = buttons
-        val h = hid ?: return
-        val d = host ?: return
+        val h = hid ?: return 0
+        val d = host ?: return 0
+        var ok = true
         var rx = dx
         var ry = dy
         var w = wheel.coerceIn(-127, 127)
         do {
             val sx = rx.coerceIn(-127, 127)
             val sy = ry.coerceIn(-127, 127)
-            h.sendReport(d, MOUSE_ID, byteArrayOf(buttons.toByte(), sx.toByte(), sy.toByte(), w.toByte()))
+            ok = h.sendReport(d, MOUSE_ID, byteArrayOf(buttons.toByte(), sx.toByte(), sy.toByte(), w.toByte())) && ok
             rx -= sx; ry -= sy; w = 0
         } while (rx != 0 || ry != 0)
+        return if (ok) 1 else -1
     }
 
     fun stop() {

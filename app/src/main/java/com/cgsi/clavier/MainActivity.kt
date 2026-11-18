@@ -41,7 +41,7 @@ class MainActivity : Activity() {
                 }
             }
         )
-        gyro = GyroMouse(this) { dx, dy -> hid.sendMouse(hid.lastButtons, dx, dy, 0) }
+        gyro = GyroMouse(this) { dx, dy -> hid.sendMouse(hid.lastButtons, dx, dy, 0); Unit }
 
         web = WebView(this).apply {
             setBackgroundColor(0xFF0B3D91.toInt())
@@ -59,7 +59,7 @@ class MainActivity : Activity() {
     // ---- Pont JavaScript -> Android (objet "Android" côté page) ----
     inner class Bridge {
         @JavascriptInterface fun sendKey(code: Int, mods: Int) = hid.sendKey(code, mods)
-        @JavascriptInterface fun mouse(dx: Int, dy: Int, wheel: Int, buttons: Int) = hid.sendMouse(buttons, dx, dy, wheel)
+        @JavascriptInterface fun mouse(dx: Int, dy: Int, wheel: Int, buttons: Int): Int = hid.sendMouse(buttons, dx, dy, wheel)
         @JavascriptInterface fun getDevices(): String = hid.pairedDevices()
         @JavascriptInterface fun disconnect() = hid.disconnect()
         @JavascriptInterface fun connect(address: String) {
