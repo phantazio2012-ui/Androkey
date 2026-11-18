@@ -25,11 +25,23 @@ Deux workflows se lancent automatiquement (onglet **Actions**) :
 Ouvrir le dossier dans Android Studio, puis **Build > Build APK(s)** →
 `app/build/outputs/apk/debug/app-debug.apk`. Pour une version signée : **Build > Generate Signed Bundle / APK**.
 
+## Fonctions
+- Clavier AZERTY / QWERTY / QWERTZ avec Maj, Verr Maj, Ctrl, Alt, Alt Gr, Windows (touches collantes : appuyer puis la touche suivante).
+- **PAVÉ NUMÉRIQUE** : chiffres et opérateurs (+ − × / = % ( ) , .).
+- **MODE SOURIS** : pavé tactile (toucher = clic gauche, 2 doigts = clic droit / défilement), boutons gauche/droit,
+  bande **molette**, et **⟲ Mouvement** (souris par gyroscope : tourner/incliner le téléphone déplace le curseur).
+- Le bouton portant le logo CGSI ouvre https://cgsi.netlify.app/.
+
 ## Utilisation
 1. Installer l'APK (Android 9 minimum), accepter les permissions Bluetooth.
 2. Appairer l'appareil avec l'ordinateur (ou **Paramètres > Rendre visible**).
 3. **Paramètres > Appareil Bluetooth** : choisir l'ordinateur, puis **Connecter**.
 4. Choisir la même disposition que celle de l'ordinateur.
+
+## Si la souris (ou le clavier) ne réagit pas sur l'ordinateur
+La version avec souris change le type d'appareil (clavier + souris). Un ordinateur déjà appairé avec l'ancienne version
+garde en mémoire « clavier seulement » : **supprimez le téléphone dans les appareils Bluetooth de l'ordinateur,
+supprimez l'ordinateur dans les appareils appairés du téléphone, puis appairez de nouveau**.
 
 ## Limites connues
 - Certains téléphones (selon la marque/ROM) bloquent le profil HID Device.
