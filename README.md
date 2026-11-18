@@ -25,13 +25,6 @@ Deux workflows se lancent automatiquement (onglet **Actions**) :
 Ouvrir le dossier dans Android Studio, puis **Build > Build APK(s)** →
 `app/build/outputs/apk/debug/app-debug.apk`. Pour une version signée : **Build > Generate Signed Bundle / APK**.
 
-## Fonctions
-- Clavier AZERTY / QWERTY / QWERTZ avec Maj, Verr Maj, Ctrl, Alt, Alt Gr, Windows (touches collantes : appuyer puis la touche suivante).
-- **PAVÉ NUMÉRIQUE** : chiffres et opérateurs (+ − × / = % ( ) , .).
-- **MODE SOURIS** : pavé tactile (toucher = clic gauche, 2 doigts = clic droit / défilement), boutons gauche/droit,
-  bande **molette**, et **⟲ Mouvement** (souris par gyroscope : tourner/incliner le téléphone déplace le curseur).
-- Le bouton portant le logo CGSI ouvre https://cgsi.netlify.app/.
-
 ## Utilisation
 1. Installer l'APK (Android 9 minimum), accepter les permissions Bluetooth.
 2. Appairer l'appareil avec l'ordinateur (ou **Paramètres > Rendre visible**).
